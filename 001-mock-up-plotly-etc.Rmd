@@ -137,16 +137,14 @@ renderPlotly({
     geom_abline(intercept = 0, slope = 1/input$red_ab, colour = "red") +
     geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
     coord_fixed(ratio = 1, expand = FALSE)
-  
- # ggp_build <- plotly_build(g)
-#  ggp_build$layout$height = 1800
-#  ggp_build$layout$width = 600
 
- # ggp_build
   ggplotly(g, height = 600, width = 900)
   
 })
 ```
+
+And that is a pretty decent mockup for a couple hours.
+
 
 
 Can't seem to get the figure height set well...
