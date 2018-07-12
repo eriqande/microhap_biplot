@@ -1,0 +1,153 @@
+---
+title: "Mocking Up Some Plotly Plots for the Shiny App"
+runtime: shiny
+output: html_document
+---
+
+Phil showed me a really nice way to visualize the microhaplot output that gives a good sense
+for whether the depth and allelic ratio are reasonable for a locus.
+
+I am investigating here whether we could make a similar plot in plotly within the microhap 
+Shiny app and then change depth and balance thresholds.
+
+
+## Data and getting into the right form
+
+I am going to use Phil's data:
+```{r}
+library(tidyverse)
+library(plotly)
+```
+
+```{r, eval=FALSE}
+dat <- read_csv("data/10pcN_observed_unfiltered_haplotype_250518.csv.gz") %>%
+  arrange(indiv.ID, locus, rank)
+```
+
+It looks like from this we will need to call genotypes from this.
+
+Here is how we will do it:
+
+* take the top two haplos
+* if the sum of their depths is > 10, then try to call it.
+* if the allele balance of the second haplo is > 0.3 then call it 
+a het. Otherwise call it a homozygote.
+
+
+```{r, eval=FALSE}
+# this is meant to be called in a dplyr mutate.  Probably not the fastest
+# function in the business, but it gets the job done.
+geno_call_func <- function(h, d, ab, d_thresh = 10, ab_thresh = 0.3) {
+  if(sum(d) < 10) {
+    return(rep(NA, length(d)))
+  }
+  if(length(d) == 1) {
+    return(paste0(h[1], "/", h[1]))
+  }
+  if(length(d) == 2 && ab[2] < 0.3) {
+    return(paste0(h[1], "/", h[1]))
+  }
+  
+  hs <- sort(h)
+  
+  return(paste0(hs[1], "/", hs[2]))
+}
+
+
+genos <- dat %>%
+  filter(rank <= 2) %>%
+  group_by(group, indiv.ID, locus) %>%
+  mutate(genotype = geno_call_func(haplo, depth, allele.balance)) %>%
+  separate(genotype, into = c("h1", "h2"), convert = TRUE, remove = FALSE) %>%
+  mutate(categ = ifelse(h1 == h2, "Homoz", "Het")) %>%
+  ungroup()
+```
+
+Now we turn that into something that has depth.x and depth.y, and all the stuff we need to plot it
+```{r, eval=FALSE}
+gdepths <- genos %>%
+  select(group, indiv.ID, locus, genotype, categ, depth, rank) %>%
+  spread(key = rank, value = depth) %>%
+  rename(top.depth = `1`,
+         low.depth = `2`) %>%
+  filter(!is.na(genotype))  # this kills about 6 rows that were garbage
+```
+
+Then I wrote that to gdepths to use as an intermediate
+```{r, eval=FALSE}
+write_rds(gdepths, "gdepths.rds", compress = "xz")
+```
+
+Cool. Now, gdepths has what we need to plot it.
+
+
+## Plotting
+
+We can put this all in a shiny app in the Rmarkdown.  Wild...
+
+```{r, echo=FALSE}
+
+gdepths <- read_rds("gdepths.rds")
+
+fluidRow(
+column(4, selectInput("i_locus", label = "Which Locus",
+              choices = unique(gdepths$locus), selected = "Loc_144")),
+
+column(4, sliderInput("red_ab",
+            label = "Red line allele balance",
+            min = 0,
+            max = 1,
+            value = 0.4,
+            step = 0.02)),
+
+column(4, sliderInput("blue_ab",
+            label = "Blue line allele balance",
+            min = 0,
+            max = 1,
+            value = 0.3,
+            step = 0.02))
+)
+
+
+shinyWidgets::sliderTextInput("max_read_depth",
+                            label = "Max Read Depth To Show On Plot:",
+                            choices = 10 * 2^(0:13),
+                            selected = 1280, 
+                            grid = T,
+                            width = "600px"
+                            )
+```
+
+
+```{r, echo=FALSE}
+# and make a simple ggplot
+renderPlotly({
+  
+  dataset <- gdepths %>% 
+    filter(locus == input$i_locus,
+           top.depth <= input$max_read_depth,
+           low.depth <= input$max_read_depth)
+  
+  g <- ggplot(dataset, aes(x = low.depth, y = top.depth, fill = genotype, shape = categ, label = indiv.ID)) + 
+    geom_vline(xintercept = 0, colour = "black", size = 0.8) +
+    geom_hline(yintercept = 0, colour = "black", size = 0.8) +
+    geom_point(size = 2) + 
+    scale_shape_manual(values = c(23, 21)) +
+    geom_abline(intercept = 0, slope = 1/input$blue_ab, colour = "blue") +
+    geom_abline(intercept = 0, slope = 1/input$red_ab, colour = "red") +
+    geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+    coord_fixed(ratio = 1, expand = FALSE)
+  
+ # ggp_build <- plotly_build(g)
+#  ggp_build$layout$height = 1800
+#  ggp_build$layout$width = 600
+
+ # ggp_build
+  ggplotly(g, height = 600, width = 900)
+  
+})
+```
+
+
+Can't seem to get the figure height set well...
+
