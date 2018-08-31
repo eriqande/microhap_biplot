@@ -86,6 +86,7 @@ Cool. Now, gdepths has what we need to plot it.
 We can put this all in a shiny app in the Rmarkdown.  Wild...
 
 ```{r, echo=FALSE}
+library(shiny)
 
 gdepths <- read_rds("gdepths.rds")
 
@@ -146,6 +147,4 @@ renderPlotly({
 And that is a pretty decent mockup for a couple hours.
 
 
-
-Can't seem to get the figure height set well...
 
